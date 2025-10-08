@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run type-check:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm install)",
+      "Bash(pkill:*)",
+      "Read(//mnt/c/code/**)",
+      "Bash(cat:*)",
+      "Bash(npx next:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(timeout 10 git add -A)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nchore: Add .gitignore and remove .env.local from repository\n\n- Add comprehensive .gitignore for Next.js, Node.js, and Prisma\n- Remove .env.local from git tracking (should not be committed)\n- Ignore node_modules, .next, build artifacts, and local env files\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh auth:*)",
+      "Bash(git reset:*)",
+      "Bash(git config:*)",
+      "Bash(git fetch:*)",
+      "Bash(git merge-base:*)",
+      "Read(//home/ifuu/**)",
+      "Bash(ssh-keygen:*)",
+      "Bash(ssh-add:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(GIT_SSH_COMMAND=\"ssh -o StrictHostKeyChecking=no\" git push origin main)",
+      "Bash(ssh:*)",
+      "Bash(chmod:*)",
+      "Bash(git rev-list:*)",
+      "Bash(git cat-file:*)",
+      "Bash(sort:*)",
+      "Bash(git log:*)",
+      "Bash(git checkout:*)",
+      "Bash(git clone:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

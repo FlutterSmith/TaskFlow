@@ -1,7 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
-import { api } from './api-client';
+import { authApi } from './auth-api-client';
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -21,12 +21,23 @@ export const authOptions: NextAuthOptions = {
         }
 
         try {
-          const response = await api.post('/auth/login', {
+          const response = await authApi.post<{
+            user: { id: string; email: string; name: string; image?: string };
+            accessToken: string;
+            refreshToken: string;
+          }>('/auth/login', {
             email: credentials.email,
             password: credentials.password,
           });
 
-          return response;
+          // Return user object with accessToken attached
+          return {
+            id: response.user.id,
+            email: response.user.email,
+            name: response.user.name,
+            image: response.user.image,
+            accessToken: response.accessToken,
+          };
         } catch (error) {
           throw new Error('Invalid credentials');
         }

@@ -72,21 +72,36 @@ export function initializeSentry() {
 }
 
 // Express middleware for request handling
-export const sentryRequestHandler = () => Sentry.Handlers.requestHandler();
+export const sentryRequestHandler = () => {
+  if (!process.env.SENTRY_DSN) {
+    return (req: Request, res: Response, next: NextFunction) => next();
+  }
+  return Sentry.Handlers.requestHandler();
+};
 
 // Express middleware for error handling
-export const sentryErrorHandler = () => Sentry.Handlers.errorHandler({
-  shouldHandleError(error) {
-    // Capture all errors with status code >= 500
-    if (error.statusCode && error.statusCode >= 500) {
-      return true;
-    }
-    return false;
-  },
-});
+export const sentryErrorHandler = () => {
+  if (!process.env.SENTRY_DSN) {
+    return (err: any, req: Request, res: Response, next: NextFunction) => next(err);
+  }
+  return Sentry.Handlers.errorHandler({
+    shouldHandleError(error) {
+      // Capture all errors with status code >= 500
+      if (error.statusCode && error.statusCode >= 500) {
+        return true;
+      }
+      return false;
+    },
+  });
+};
 
 // Express middleware for tracing
-export const sentryTracingHandler = () => Sentry.Handlers.tracingHandler();
+export const sentryTracingHandler = () => {
+  if (!process.env.SENTRY_DSN) {
+    return (req: Request, res: Response, next: NextFunction) => next();
+  }
+  return Sentry.Handlers.tracingHandler();
+};
 
 // Manual error capture
 export function captureException(error: Error, context?: Record<string, any>) {

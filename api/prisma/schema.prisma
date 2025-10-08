@@ -1,0 +1,452 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// IDENTITY & AUTHENTICATION
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  name          String?
+  image         String?
+  password      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships      OrganizationMember[]
+  createdTasks     Task[]               @relation("TaskCreator")
+  assignedTasks    TaskAssignee[]
+  comments         Comment[]
+  activityLogs     ActivityLog[]
+  refreshTokens    RefreshToken[]
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================
+// MULTI-TENANT CORE
+// ============================================
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  domain      String?  @unique
+  logo        String?
+
+  subscriptionTier   SubscriptionTier   @default(FREE)
+  subscriptionStatus SubscriptionStatus @default(ACTIVE)
+  stripeCustomerId   String?            @unique
+  stripeSubscriptionId String?          @unique
+
+  maxUsers     Int @default(5)
+  maxProjects  Int @default(3)
+  maxStorage   Int @default(1000)
+
+  currentUsers    Int @default(0)
+  currentProjects Int @default(0)
+  currentStorage  Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members      OrganizationMember[]
+  projects     Project[]
+  teams        Team[]
+  customFields CustomField[]
+  webhooks     Webhook[]
+  auditLogs    AuditLog[]
+
+  @@index([slug])
+  @@index([stripeCustomerId])
+}
+
+enum SubscriptionTier {
+  FREE
+  STARTER
+  BUSINESS
+  ENTERPRISE
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole  @default(MEMBER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  teamMembers TeamMember[]
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId])
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+model Team {
+  id             String @id @default(cuid())
+  organizationId String
+  name           String
+  description    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      TeamMember[]
+  projects     Project[]
+
+  @@index([organizationId])
+}
+
+model TeamMember {
+  id       String @id @default(cuid())
+  teamId   String
+  memberId String
+
+  team   Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  member OrganizationMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, memberId])
+  @@index([teamId])
+  @@index([memberId])
+}
+
+// ============================================
+// PROJECT & TASK MANAGEMENT
+// ============================================
+
+model Project {
+  id             String   @id @default(cuid())
+  organizationId String
+  teamId         String?
+
+  name        String
+  description String?  @db.Text
+  key         String
+  color       String   @default("#3B82F6")
+  icon        String?
+
+  isArchived Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team?        @relation(fields: [teamId], references: [id])
+
+  tasks     Task[]
+  sections  Section[]
+  views     ProjectView[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@index([teamId])
+}
+
+model Section {
+  id        String @id @default(cuid())
+  projectId String
+
+  name     String
+  position Int
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId])
+}
+
+model Task {
+  id             String  @id @default(cuid())
+  organizationId String
+  projectId      String
+  sectionId      String?
+  createdById    String
+
+  title       String
+  description String?  @db.Text
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+
+  taskNumber Int
+
+  dueDate   DateTime?
+  startDate DateTime?
+
+  estimatedHours Float?
+  actualHours    Float?
+
+  position Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  section     Section?       @relation(fields: [sectionId], references: [id])
+  createdBy   User           @relation("TaskCreator", fields: [createdById], references: [id])
+
+  assignees     TaskAssignee[]
+  comments      Comment[]
+  attachments   Attachment[]
+  customValues  CustomFieldValue[]
+  subtasks      Task[]         @relation("TaskHierarchy")
+  parentTask    Task?          @relation("TaskHierarchy", fields: [parentTaskId], references: [id])
+  parentTaskId  String?
+
+  dependencies TaskDependency[] @relation("DependentTask")
+  blockedBy    TaskDependency[] @relation("BlockingTask")
+
+  @@unique([projectId, taskNumber])
+  @@index([organizationId, status])
+  @@index([projectId])
+  @@index([createdById])
+  @@index([dueDate])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  BLOCKED
+  DONE
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model TaskAssignee {
+  id     String @id @default(cuid())
+  taskId String
+  userId String
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId])
+  @@index([userId])
+}
+
+model TaskDependency {
+  id            String @id @default(cuid())
+  taskId        String
+  dependsOnId   String
+
+  dependentTask Task @relation("DependentTask", fields: [taskId], references: [id], onDelete: Cascade)
+  blockingTask  Task @relation("BlockingTask", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, dependsOnId])
+  @@index([dependsOnId])
+}
+
+model Comment {
+  id             String @id @default(cuid())
+  taskId         String
+  userId         String
+  content        String @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+  @@index([userId])
+}
+
+model Attachment {
+  id       String @id @default(cuid())
+  taskId   String
+
+  fileName String
+  fileSize Int
+  fileType String
+  fileUrl  String
+
+  uploadedAt DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
+}
+
+// ============================================
+// CUSTOM FIELDS
+// ============================================
+
+model CustomField {
+  id             String @id @default(cuid())
+  organizationId String
+  projectId      String?
+
+  name        String
+  fieldType   FieldType
+  options     Json?
+  isRequired  Boolean   @default(false)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  values       CustomFieldValue[]
+
+  @@index([organizationId])
+  @@index([projectId])
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  DATE
+  SELECT
+  MULTI_SELECT
+  CHECKBOX
+  URL
+  EMAIL
+}
+
+model CustomFieldValue {
+  id            String @id @default(cuid())
+  taskId        String
+  customFieldId String
+  value         Json
+
+  task        Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  customField CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, customFieldId])
+  @@index([customFieldId])
+}
+
+// ============================================
+// VIEWS & FILTERS
+// ============================================
+
+model ProjectView {
+  id        String @id @default(cuid())
+  projectId String
+
+  name     String
+  viewType ViewType @default(LIST)
+  filters  Json?
+  sorting  Json?
+  groupBy  String?
+
+  isDefault Boolean @default(false)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+enum ViewType {
+  LIST
+  BOARD
+  TIMELINE
+  CALENDAR
+  TABLE
+}
+
+// ============================================
+// AUDIT & ACTIVITY
+// ============================================
+
+model ActivityLog {
+  id        String @id @default(cuid())
+  userId    String
+  taskId    String?
+
+  action    String
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([taskId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id             String @id @default(cuid())
+  organizationId String
+
+  userId     String?
+  action     String
+  resource   String
+  resourceId String
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([resourceId])
+}
+
+// ============================================
+// WEBHOOKS & INTEGRATIONS
+// ============================================
+
+model Webhook {
+  id             String  @id @default(cuid())
+  organizationId String
+
+  url         String
+  events      String[]
+  isActive    Boolean  @default(true)
+  secret      String
+
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+}

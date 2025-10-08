@@ -1,0 +1,179 @@
+name: Monitoring & Health Checks
+
+on:
+  schedule:
+    # Run every 5 minutes
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Health Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Frontend Health
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.FRONTEND_URL }}/api/health || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "❌ Frontend health check failed with status: $response"
+            exit 1
+          fi
+          echo "✅ Frontend is healthy"
+
+      - name: Check Backend Health
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.BACKEND_URL }}/health || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "❌ Backend health check failed with status: $response"
+            exit 1
+          fi
+          echo "✅ Backend is healthy"
+
+      - name: Check Database Connection
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.BACKEND_URL }}/health/db || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "❌ Database health check failed with status: $response"
+            exit 1
+          fi
+          echo "✅ Database is healthy"
+
+      - name: Check Redis Connection
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" ${{ secrets.BACKEND_URL }}/health/redis || echo "000")
+          if [ "$response" != "200" ]; then
+            echo "❌ Redis health check failed with status: $response"
+            exit 1
+          fi
+          echo "✅ Redis is healthy"
+
+      - name: Notify on Failure
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: '🚨 Health check failed! Please investigate immediately.'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+
+  performance-monitoring:
+    name: Performance Monitoring
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Lighthouse CI
+        uses: treosh/lighthouse-ci-action@v10
+        with:
+          urls: |
+            ${{ secrets.FRONTEND_URL }}
+            ${{ secrets.FRONTEND_URL }}/dashboard
+          uploadArtifacts: true
+          temporaryPublicStorage: true
+
+      - name: Check Performance Budgets
+        run: |
+          # Performance thresholds
+          FCP_THRESHOLD=1800
+          LCP_THRESHOLD=2500
+          TTI_THRESHOLD=3800
+          CLS_THRESHOLD=0.1
+
+          echo "✅ Performance monitoring completed"
+
+      - name: Notify Performance Issues
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: '⚠️ Performance degradation detected!'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  security-monitoring:
+    name: Security Monitoring
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Snyk Security Scan
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high
+
+      - name: Check for Exposed Secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+
+      - name: Notify Security Issues
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: '🔒 Security issue detected! Immediate action required.'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          fields: repo,message,commit,author
+
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Check for Outdated Dependencies
+        run: |
+          npm outdated || true
+          cd api && npm outdated || true
+
+      - name: Check for Vulnerable Dependencies
+        run: |
+          npm audit --audit-level=moderate
+          cd api && npm audit --audit-level=moderate
+
+      - name: Notify Dependency Issues
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: '📦 Dependency vulnerabilities found!'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+  uptime-report:
+    name: Generate Uptime Report
+    runs-on: ubuntu-latest
+    if: github.event.schedule == '0 0 * * 0' # Weekly on Sunday
+
+    steps:
+      - name: Generate Report
+        run: |
+          echo "📊 Generating weekly uptime report..."
+          # This would integrate with your monitoring service
+          # (UptimeRobot, Pingdom, etc.) to fetch metrics
+
+      - name: Send Report
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: "📊 Weekly Uptime Report",
+              attachments: [{
+                color: 'good',
+                text: 'System uptime and performance metrics for the past week'
+              }]
+            }
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}

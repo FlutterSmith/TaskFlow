@@ -90,7 +90,7 @@ jobs:
           curl -f ${{ secrets.RAILWAY_APP_URL }}/health || exit 1
 
       - name: Create Sentry release
-        uses: getsentry/action-release@v1
+        uses: getsentry/action-release@v3
         if: github.event.inputs.environment == 'production' || github.ref == 'refs/heads/main'
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}

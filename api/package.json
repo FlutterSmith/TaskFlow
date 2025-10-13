@@ -42,7 +42,7 @@
     "cookie-parser": "^1.4.7",
     "morgan": "^1.10.0",
     "bullmq": "^5.15.0",
-    "ioredis": "^5.4.1",
+    "ioredis": "^5.8.1",
     "nanoid": "^3.3.7",
     "date-fns": "^4.1.0"
   },
